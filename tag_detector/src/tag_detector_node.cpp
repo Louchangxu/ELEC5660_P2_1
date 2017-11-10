@@ -11,6 +11,9 @@
 #include <opencv2/opencv.hpp>
 #include <Eigen/Eigen>
 #include <Eigen/SVD>
+
+#include <opencv2/core/eigen.hpp>
+
 //EIgen SVD libnary, may help you solve SVD
 //JacobiSVD<MatrixXd> svd(A, ComputeThinU | ComputeThinV);
 
@@ -33,11 +36,12 @@ ros::Publisher pub_odom_ref;
 cv::Mat K, D;
 
 // test function, can be used to verify your estimation
-void calculateReprojectionError(const vector<cv::Point3f> &pts_3, const vector<cv::Point2f> &pts_2, const cv::Mat R, const cv::Mat t)
+MatrixXd calculateReprojectionError(const vector<cv::Point3f> &pts_3, const vector<cv::Point2f> &pts_2, const cv::Mat R, const cv::Mat t)
 {
-    puts("calculateReprojectionError begins");
+    //puts("calculateReprojectionError begins");
     vector<cv::Point2f> un_pts_2;
     cv::undistortPoints(pts_2, un_pts_2, K, D);
+    MatrixXd p_scale(pts_3.size(),2);
     for (unsigned int i = 0; i < pts_3.size(); i++)
     {
         cv::Mat p_mat(3, 1, CV_64FC1);
@@ -45,12 +49,20 @@ void calculateReprojectionError(const vector<cv::Point3f> &pts_3, const vector<c
         p_mat.at<double>(1, 0) = pts_3[i].y;
         p_mat.at<double>(2, 0) = pts_3[i].z;
         cv::Mat p = (R * p_mat + t);
+        /*
         printf("(%f, %f, %f) -> (%f, %f) and (%f, %f)\n",
                pts_3[i].x, pts_3[i].y, pts_3[i].z,
                un_pts_2[i].x, un_pts_2[i].y,
                p.at<double>(0) / p.at<double>(2), p.at<double>(1) / p.at<double>(2));
+
+        printf("%f, %f\n",
+               p.at<double>(0) / p.at<double>(2), p.at<double>(1) / p.at<double>(2));
+        */
+        p_scale(i,0) = p.at<double>(0) / p.at<double>(2);
+        p_scale(i,1) = p.at<double>(1) / p.at<double>(2);
     }
-    puts("calculateReprojectionError ends");
+    //puts("calculateReprojectionError ends");
+    return p_scale;
 }
 
 // the main function you need to work with
@@ -139,7 +151,22 @@ void process(const vector<int> &pts_id, const vector<cv::Point3f> &pts_3, const 
     JacobiSVD<MatrixXd> svd2(h_R, ComputeThinU | ComputeThinV);
     R = svd2.matrixU() * (svd2.matrixV().transpose()) ;
     T = h_3 / (h_1.norm());
-
+    /*
+    This is error computing part
+    */
+    cv::Mat R_my,T_my;
+    double p_error = 0.0;
+    MatrixXd p_scale_my(pts_id.size(),2);
+    MatrixXd p_scale_ref(pts_id.size(),2);
+    cv::eigen2cv(R,R_my);
+    cv::eigen2cv(T,T_my);
+    p_scale_my = calculateReprojectionError(pts_3, pts_2, R_my, T_my);// This is my P
+    p_scale_ref = calculateReprojectionError(pts_3, pts_2, r, t);// This is reference P
+    for (int i = 0; i < pts_id.size(); i++) {
+      p_error = pow( pow((p_scale_my(i,0)-p_scale_ref(i,0)),2) + pow((p_scale_my(i,1)-p_scale_ref(i,1)),2) , 0.5 );
+    }
+    p_error = p_error/pts_id.size();
+    std::cout << p_error << '\n';
     //...
     Quaterniond Q_yourwork;
     Q_yourwork = R;
