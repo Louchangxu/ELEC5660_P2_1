@@ -88,12 +88,17 @@ void process(const vector<int> &pts_id, const vector<cv::Point3f> &pts_3, const 
     Vector3d T;
     R.setIdentity();
     T.setZero();
-    ROS_INFO("write your code here!");
+    //ROS_INFO("write your code here!");
     //...
     vector<cv::Point2f> un_pts_2;
-    cv::undistortPoints(pts_2, un_pts_2, K, D);
     int n_size =  pts_id.size();
     MatrixXd A(n_size*2,9);
+    VectorXd h(9);
+    MatrixXd V(9,9);
+    Vector3d h_1,h_2,h_3;
+    Matrix3d h_R;
+    // undistort the image to Reduce the calculate of k^(-1)
+    cv::undistortPoints(pts_2, un_pts_2, K, D);
     // construct A for Ax = b
     for (int i = 0; i < n_size; i++) {
       A(i,0) = pts_3[i].x;
@@ -115,23 +120,21 @@ void process(const vector<int> &pts_id, const vector<cv::Point3f> &pts_3, const 
       A(i+n_size,7) = - pts_3[i].y * un_pts_2[i].y;
       A(i+n_size,8) = - un_pts_2[i].y;
     }
-    VectorXd h(9);
-    MatrixXd V(9,9);
+    // calculate h
     JacobiSVD<MatrixXd> svd1(A, ComputeThinU | ComputeThinV);
     V = svd1.matrixV();
     for (int i = 0; i < 9; i++) {
       h(i) = V(i,8);
     }
+    // adjust the direction of camera
     if (h(8)<0) {
       h = -h;
     }
-    Vector3d h_1,h_2,h_3;
     for (int i = 0; i < 3; i++) {
       h_1(i) = h(3*i);
       h_2(i) = h(3*i+1);
       h_3(i) = h(3*i+2);
     }
-    Matrix3d h_R;
     h_R << h_1,h_2,h_1.cross(h_2);
     JacobiSVD<MatrixXd> svd2(h_R, ComputeThinU | ComputeThinV);
     R = svd2.matrixU() * (svd2.matrixV().transpose()) ;
